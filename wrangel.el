@@ -95,6 +95,50 @@ Returns the filename."
           (wrangel--append-to-org-file "inbox.org" text)
           (message "Added todo to inbox.org (unknown category '%s'): %s" category text))))))
 
+(defun wrangel--create-org-node-for-idea (idea)
+  "Create an org-node atomic note for a single IDEA and return the node ID."
+  (let* ((title (plist-get idea :title))
+         (content (plist-get idea :content))
+         (category (or (plist-get idea :category) "general"))
+         (tags (plist-get idea :tags))
+         (node-id (org-id-new))
+         (timestamp (format-time-string "%Y-%m-%d %H:%M"))
+         (filename (format "zettel-%s.org" category))
+         (file-path (expand-file-name filename)))
+    
+    ;; Create the atomic note file
+    (with-temp-buffer
+      (when (file-exists-p file-path)
+        (insert-file-contents file-path))
+      (goto-char (point-max))
+      (unless (bolp) (insert "\n"))
+      
+      ;; Insert the atomic note with org-node structure
+      (insert (format "* %s\n" title))
+      (insert (format ":PROPERTIES:\n"))
+      (insert (format ":ID: %s\n" node-id))
+      (insert (format ":CREATED: %s\n" timestamp))
+      (insert (format ":CATEGORY: %s\n" category))
+      (when tags
+        (insert (format ":FILETAGS: %s\n" (mapconcat 'identity tags " "))))
+      (insert (format ":END:\n\n"))
+      (insert (format "%s\n\n" content))
+      
+      (write-region (point-min) (point-max) file-path))
+    
+    ;; Return the node ID for linking
+    node-id))
+
+(defun wrangel--process-ideas-as-org-nodes (ideas)
+  "Process IDEAS list and create org-node atomic notes, returning list of node IDs."
+  (let ((node-ids '()))
+    (dolist (idea ideas)
+      (let* ((node-id (wrangel--create-org-node-for-idea idea))
+             (title (plist-get idea :title)))
+        (push (list :id node-id :title title) node-ids)
+        (message "Created atomic note: %s" title)))
+    (reverse node-ids)))
+
 (defun wrangel--process-ideas (ideas)
   "Process IDEAS list and append to category-specific org files."
   (dolist (idea ideas)
@@ -127,6 +171,13 @@ INFO context."
   (wrangel--generic-callback response info
                                      #'wrangel--parse-ideas-json-response
                                      #'wrangel--process-ideas))
+
+(defun wrangel--ideas-org-node-callback (response info)
+  "Callback function to process LLM RESPONSE for ideas extraction as org-nodes.
+INFO context. Creates atomic notes and returns node IDs for linking."
+  (wrangel--generic-callback response info
+                                     #'wrangel--parse-ideas-json-response
+                                     #'wrangel--process-ideas-as-org-nodes))
 
 (defun wrangel--tldr-callback (response info)
   "Callback function to process LLM RESPONSE for TLDR extraction with INFO context."
@@ -266,8 +317,10 @@ then appends it to tldr.org file."
         (puthash 'tldr "TLDR generation failed" results)))
      
      ((eq step 'ideas)
-      (let ((ideas (wrangel--parse-ideas-json-response (or response ""))))
-        (puthash 'ideas ideas results)))
+      (let* ((ideas (wrangel--parse-ideas-json-response (or response "")))
+             (org-node-links (when ideas (wrangel--process-ideas-as-org-nodes ideas))))
+        (puthash 'ideas ideas results)
+        (puthash 'idea-nodes org-node-links results)))
      
      ((eq step 'todos)
       (let ((todos (wrangel--parse-json-response (or response ""))))
@@ -306,13 +359,16 @@ then appends it to tldr.org file."
       (insert "** Content\n")
       (insert (format "%s\n\n" (or original-text "Original text not captured")))
       
-      (insert "** Ideas\n")
-      (if ideas
-          (dolist (idea ideas)
-            (let ((text (plist-get idea :text))
-                  (category (plist-get idea :category)))
-              (insert (format "- %s (category: %s)\n" text category))))
-        (insert "No ideas extracted\n"))
+      (insert "** Atomic Notes\n")
+      (let ((idea-nodes (gethash 'idea-nodes results)))
+        (if idea-nodes
+            (progn
+              (insert (format "Generated %d atomic zettelkasten notes:\n" (length idea-nodes)))
+              (dolist (node idea-nodes)
+                (let ((node-id (plist-get node :id))
+                      (title (plist-get node :title)))
+                  (insert (format "- [[id:%s][%s]]\n" node-id title)))))
+          (insert "No atomic notes created\n")))
       (insert "\n")
       
       (insert "** TODOs\n")
