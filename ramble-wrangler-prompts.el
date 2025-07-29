@@ -1,4 +1,4 @@
-;;; org-todo-extractor-prompts.el --- System prompts for org-todo-extractor -*- lexical-binding: t; -*-
+;;; ramble-wrangler-prompts.el --- System prompts for ramble-wrangler -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2024
 
@@ -8,11 +8,11 @@
 
 ;;; Commentary:
 
-;; This file contains the system prompts used by org-todo-extractor.el
+;; This file contains the system prompts used by ramble-wrangler.el
 
 ;;; Code:
 
-(defconst org-todo-extractor-system-prompt
+(defconst ramble-wrangler-system-prompt
   "You are an expert at extracting actionable todos from text and categorizing them.
 
 Extract all actionable todos from the provided text and format them as org-mode TODO items.
@@ -44,7 +44,7 @@ Rules:
 - Preserve important context in the todo text"
   "System prompt for the LLM to extract and categorize todos.")
 
-(defconst org-todo-extractor-ideas-system-prompt
+(defconst ramble-wrangler-ideas-system-prompt
   "You are an expert at extracting atomic ideas from text and organizing them clearly.
 
 Extract all discrete, atomic ideas from the provided text. Each idea should be:
@@ -77,7 +77,7 @@ Rules:
 - If unsure about category, use 'general'"
   "System prompt for the LLM to extract atomic ideas.")
 
-(defconst org-todo-extractor-tldr-system-prompt
+(defconst ramble-wrangler-tldr-system-prompt
   "You are an expert at creating concise, accurate summaries of text content.
 
 Create a clear TLDR (Too Long; Didn't Read) summary of the provided text that:
@@ -92,6 +92,6 @@ Format your response as plain text - just the summary itself, no JSON or special
 Keep the summary concise but comprehensive enough to understand the core message without reading the original text."
   "System prompt for the LLM to create TLDR summaries.")
 
-(provide 'org-todo-extractor-prompts)
+(provide 'ramble-wrangler-prompts)
 
-;;; org-todo-extractor-prompts.el ends here
+;;; ramble-wrangler-prompts.el ends here
