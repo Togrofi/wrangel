@@ -1,0 +1,151 @@
+;;; org-todo-extractor.el --- Extract and categorize org todos using gptel.el -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2024
+
+;; Author: Charlie
+;; Keywords: org, todo, llm, gptel
+;; Version: 1.0.0
+;; Package-Requires: ((emacs "27.1") (gptel "0.6.0"))
+
+;;; Commentary:
+
+;; This package provides functionality to extract org-mode todos from buffer text
+;; using gptel.el and automatically categorize them into appropriate org files.
+
+;;; Code:
+
+(require 'gptel)
+
+(defcustom org-todo-extractor-files
+  '(("inbox" . "inbox.org")
+    ("journal" . "journal.org") 
+    ("goals" . "goals.org"))
+  "Alist mapping category names to org file names."
+  :type '(alist :key-type string :value-type string)
+  :group 'org-todo-extractor)
+
+(defcustom org-todo-extractor-system-prompt
+  "You are an expert at extracting actionable todos from text and categorizing them.
+
+Extract all actionable todos from the provided text and format them as org-mode TODO items.
+
+For each todo, categorize it into one of these files:
+- inbox.org: General todos, tasks, reminders, and uncategorized items
+- journal.org: Daily reflections, thoughts, personal notes, diary-like entries
+- goals.org: Long-term objectives, aspirations, skill development, career goals
+
+Format your response as JSON with this structure:
+{
+  \"todos\": [
+    {
+      \"text\": \"TODO Learn Emacs Lisp programming\",
+      \"category\": \"goals\"
+    },
+    {
+      \"text\": \"TODO Buy groceries for dinner\",
+      \"category\": \"inbox\"  
+    }
+  ]
+}
+
+Rules:
+- Each todo text must start with 'TODO '
+- Use proper org-mode formatting
+- If unsure about category, default to 'inbox'
+- Only extract genuine actionable items
+- Preserve important context in the todo text"
+  "System prompt for the LLM to extract and categorize todos."
+  :type 'string
+  :group 'org-todo-extractor)
+
+(defun org-todo-extractor--parse-json-response (response)
+  "Parse JSON RESPONSE and return list of todos."
+  (condition-case err
+      (let* ((json-data (json-parse-string response :object-type 'plist))
+             (todos (plist-get json-data :todos)))
+        (mapcar (lambda (todo)
+                  (list :text (plist-get todo :text)
+                        :category (plist-get todo :category)))
+                todos))
+    (error
+     (message "Error parsing JSON response: %s" err)
+     nil)))
+
+(defun org-todo-extractor--append-to-org-file (filename todo-text)
+  "Append TODO-TEXT to FILENAME with proper org formatting."
+  (let ((file-path (expand-file-name filename)))
+    (with-temp-buffer
+      (when (file-exists-p file-path)
+        (insert-file-contents file-path))
+      (goto-char (point-max))
+      (unless (bolp)
+        (insert "\n"))
+      (insert (format "* %s\n" todo-text))
+      (write-region (point-min) (point-max) file-path))))
+
+(defun org-todo-extractor--process-todos (todos)
+  "Process TODOS list and append to appropriate org files."
+  (dolist (todo todos)
+    (let* ((text (plist-get todo :text))
+           (category (plist-get todo :category))
+           (filename (cdr (assoc category org-todo-extractor-files))))
+      (if filename
+          (progn
+            (org-todo-extractor--append-to-org-file filename text)
+            (message "Added todo to %s: %s" filename text))
+        (progn
+          (org-todo-extractor--append-to-org-file "inbox.org" text)
+          (message "Added todo to inbox.org (unknown category '%s'): %s" category text))))))
+
+(defun org-todo-extractor--callback (response info)
+  "Callback function to process LLM RESPONSE with INFO context."
+  (if (not response)
+      (message "Todo extraction failed: %s" (plist-get info :status))
+    (let ((todos (org-todo-extractor--parse-json-response response)))
+      (if todos
+          (progn
+            (org-todo-extractor--process-todos todos)
+            (message "Successfully extracted and categorized %d todos" (length todos)))
+        (message "No todos found or failed to parse response")))))
+
+;;;###autoload
+(defun org-todo-extractor-from-buffer (&optional buffer)
+  "Extract todos from BUFFER (or current buffer) using gptel.el.
+Sends the buffer content to an LLM to extract and categorize org todos,
+then appends them to appropriate org files."
+  (interactive)
+  (let* ((source-buffer (or buffer (current-buffer)))
+         (text-content (with-current-buffer source-buffer
+                         (buffer-substring-no-properties (point-min) (point-max)))))
+    (if (string-empty-p (string-trim text-content))
+        (message "Buffer is empty, nothing to extract")
+      (gptel-request text-content
+        :system org-todo-extractor-system-prompt
+        :callback #'org-todo-extractor--callback))))
+
+;;;###autoload
+(defun org-todo-extractor-from-region (start end)
+  "Extract todos from region between START and END using gptel.el."
+  (interactive "r")
+  (if (not (use-region-p))
+      (message "No region selected")
+    (let ((text-content (buffer-substring-no-properties start end)))
+      (if (string-empty-p (string-trim text-content))
+          (message "Selected region is empty")
+        (gptel-request text-content
+          :system org-todo-extractor-system-prompt
+          :callback #'org-todo-extractor--callback)))))
+
+;;;###autoload
+(defun org-todo-extractor-from-text (text)
+  "Extract todos from TEXT string using gptel.el."
+  (interactive "sText to extract todos from: ")
+  (if (string-empty-p (string-trim text))
+      (message "No text provided")
+    (gptel-request text
+      :system org-todo-extractor-system-prompt
+      :callback #'org-todo-extractor--callback)))
+
+(provide 'org-todo-extractor)
+
+;;; org-todo-extractor.el ends here
