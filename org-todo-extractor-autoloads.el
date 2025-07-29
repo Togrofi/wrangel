@@ -39,6 +39,20 @@ Extract atomic ideas from region between START and END using gptel.el.
 Extract atomic ideas from TEXT string using gptel.el.
 
 (fn TEXT)" t)
+(autoload 'org-todo-extractor-tldr-from-buffer "org-todo-extractor" "\
+Create TLDR summary from BUFFER (or current buffer) using gptel.el.
+Sends the buffer content to an LLM to create a concise summary,
+then appends it to tldr.org file.
+
+(fn &optional BUFFER)" t)
+(autoload 'org-todo-extractor-tldr-from-region "org-todo-extractor" "\
+Create TLDR summary from region between START and END using gptel.el.
+
+(fn START END)" t)
+(autoload 'org-todo-extractor-tldr-from-text "org-todo-extractor" "\
+Create TLDR summary from TEXT string using gptel.el.
+
+(fn TEXT)" t)
 (register-definition-prefixes "org-todo-extractor" '("org-todo-extractor-"))
 
 

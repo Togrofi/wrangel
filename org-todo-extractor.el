@@ -93,6 +93,23 @@ Rules:
   :type 'string
   :group 'org-todo-extractor)
 
+(defcustom org-todo-extractor-tldr-system-prompt
+  "You are an expert at creating concise, accurate summaries of text content.
+
+Create a clear TLDR (Too Long; Didn't Read) summary of the provided text that:
+- Captures the main points and key information
+- Is significantly shorter than the original
+- Maintains accuracy and important context
+- Uses clear, accessible language
+- Focuses on actionable insights when present
+
+Format your response as plain text - just the summary itself, no JSON or special formatting.
+
+Keep the summary concise but comprehensive enough to understand the core message without reading the original text."
+  "System prompt for the LLM to create TLDR summaries."
+  :type 'string
+  :group 'org-todo-extractor)
+
 (defun org-todo-extractor--parse-json-response (response)
   "Parse JSON RESPONSE and return list of todos."
   (condition-case err
@@ -145,6 +162,22 @@ Rules:
       (write-region (point-min) (point-max) file-path))
     filename))
 
+(defun org-todo-extractor--append-tldr-to-file (tldr-text)
+  "Append TLDR-TEXT to tldr.org file."
+  (let ((filename "tldr.org")
+        (file-path (expand-file-name "tldr.org")))
+    (with-temp-buffer
+      (when (file-exists-p file-path)
+        (insert-file-contents file-path))
+      (goto-char (point-max))
+      (unless (bolp)
+        (insert "\n"))
+      (insert (format "* TLDR - %s\n%s\n\n" 
+                      (format-time-string "%Y-%m-%d %H:%M")
+                      tldr-text))
+      (write-region (point-min) (point-max) file-path))
+    filename))
+
 (defun org-todo-extractor--process-todos (todos)
   "Process TODOS list and append to appropriate org files."
   (dolist (todo todos)
@@ -188,6 +221,20 @@ Rules:
             (org-todo-extractor--process-ideas ideas)
             (message "Successfully extracted and categorized %d ideas" (length ideas)))
         (message "No ideas found or failed to parse response")))))
+
+(defun org-todo-extractor--tldr-callback (response info)
+  "Callback function to process LLM RESPONSE for TLDR extraction with INFO context."
+  (if (not response)
+      (message "TLDR extraction failed: %s" (plist-get info :status))
+    (let ((tldr-text (string-trim response)))
+      (if (not (string-empty-p tldr-text))
+          (progn
+            (let ((filename (org-todo-extractor--append-tldr-to-file tldr-text)))
+              (message "TLDR saved to %s: %s" filename 
+                       (if (> (length tldr-text) 60) 
+                           (concat (substring tldr-text 0 60) "...")
+                         tldr-text))))
+        (message "No TLDR content generated")))))
 
 ;;;###autoload
 (defun org-todo-extractor-from-buffer (&optional buffer)
@@ -264,6 +311,44 @@ then appends them to category-specific org files."
     (gptel-request text
       :system org-todo-extractor-ideas-system-prompt
       :callback #'org-todo-extractor--ideas-callback)))
+
+;;;###autoload
+(defun org-todo-extractor-tldr-from-buffer (&optional buffer)
+  "Create TLDR summary from BUFFER (or current buffer) using gptel.el.
+Sends the buffer content to an LLM to create a concise summary,
+then appends it to tldr.org file."
+  (interactive)
+  (let* ((source-buffer (or buffer (current-buffer)))
+         (text-content (with-current-buffer source-buffer
+                         (buffer-substring-no-properties (point-min) (point-max)))))
+    (if (string-empty-p (string-trim text-content))
+        (message "Buffer is empty, nothing to summarize")
+      (gptel-request text-content
+        :system org-todo-extractor-tldr-system-prompt
+        :callback #'org-todo-extractor--tldr-callback))))
+
+;;;###autoload
+(defun org-todo-extractor-tldr-from-region (start end)
+  "Create TLDR summary from region between START and END using gptel.el."
+  (interactive "r")
+  (if (not (use-region-p))
+      (message "No region selected")
+    (let ((text-content (buffer-substring-no-properties start end)))
+      (if (string-empty-p (string-trim text-content))
+          (message "Selected region is empty")
+        (gptel-request text-content
+          :system org-todo-extractor-tldr-system-prompt
+          :callback #'org-todo-extractor--tldr-callback)))))
+
+;;;###autoload
+(defun org-todo-extractor-tldr-from-text (text)
+  "Create TLDR summary from TEXT string using gptel.el."
+  (interactive "sText to create TLDR from: ")
+  (if (string-empty-p (string-trim text))
+      (message "No text provided")
+    (gptel-request text
+      :system org-todo-extractor-tldr-system-prompt
+      :callback #'org-todo-extractor--tldr-callback)))
 
 (provide 'org-todo-extractor)
 
