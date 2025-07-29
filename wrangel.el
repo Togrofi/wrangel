@@ -15,12 +15,22 @@
 (require 'wrangel-prompts)
 (require 'cl-lib)
 
+(defcustom wrangel-todo-directory "~/org/"
+  "Directory path where todo org files should be stored."
+  :type 'string
+  :group 'wrangel)
+
 (defcustom wrangel-files
   '(("inbox" . "inbox.org")
     ("journal" . "journal.org") 
     ("goals" . "goals.org"))
   "Alist mapping category names to org file names."
   :type '(alist :key-type string :value-type string)
+  :group 'wrangel)
+
+(defcustom wrangel-org-nodes-directory "~/org/zettel/"
+  "Directory path where org-node files should be stored."
+  :type 'string
   :group 'wrangel)
 
 (defun wrangel--parse-json-response-generic (response key error-type)
@@ -45,10 +55,15 @@ ERROR-TYPE is used in error messages for context."
   "Parse JSON RESPONSE and return list of ideas."
   (wrangel--parse-json-response-generic response :ideas "ideas"))
 
-(defun wrangel--append-to-org-file-generic (filename content-formatter text)
+(defun wrangel--append-to-org-file-generic (filename content-formatter text &optional directory)
   "Append TEXT to FILENAME using CONTENT-FORMATTER function for org formatting.
+Uses DIRECTORY if provided, otherwise uses wrangel-todo-directory.
 Returns the filename."
-  (let ((file-path (expand-file-name filename)))
+  (let* ((base-dir (or directory wrangel-todo-directory))
+         (file-path (expand-file-name filename base-dir)))
+    ;; Ensure the directory exists
+    (unless (file-directory-p base-dir)
+      (make-directory base-dir t))
     (with-temp-buffer
       (when (file-exists-p file-path)
         (insert-file-contents file-path))
@@ -103,16 +118,16 @@ Returns the filename."
          (tags (plist-get idea :tags))
          (node-id (org-id-new))
          (timestamp (format-time-string "%Y-%m-%d %H:%M"))
-         (filename (format "zettel-%s.org" category))
-         (file-path (expand-file-name filename)))
+         (sanitized-title (replace-regexp-in-string "[^a-zA-Z0-9-]" "-" title))
+         (filename (format "%s-%s.org" node-id sanitized-title))
+         (file-path (expand-file-name filename wrangel-org-nodes-directory)))
     
-    ;; Create the atomic note file
+    ;; Ensure the org-nodes directory exists
+    (unless (file-directory-p wrangel-org-nodes-directory)
+      (make-directory wrangel-org-nodes-directory t))
+    
+    ;; Create the atomic note file (each idea gets its own file)
     (with-temp-buffer
-      (when (file-exists-p file-path)
-        (insert-file-contents file-path))
-      (goto-char (point-max))
-      (unless (bolp) (insert "\n"))
-      
       ;; Insert the atomic note with org-node structure
       (insert (format "* %s\n" title))
       (insert (format ":PROPERTIES:\n"))
@@ -343,7 +358,11 @@ then appends it to tldr.org file."
          (todos (gethash 'todos results))
          (todo-files (gethash 'todo-files results))
          (original-text (gethash 'original-text results))
-         (digest-file "wrangel-digest.org"))
+         (digest-file (expand-file-name "wrangel-digest.org" wrangel-todo-directory)))
+    
+    ;; Ensure the todo directory exists
+    (unless (file-directory-p wrangel-todo-directory)
+      (make-directory wrangel-todo-directory t))
     
     (with-temp-buffer
       (when (file-exists-p digest-file)
