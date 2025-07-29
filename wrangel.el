@@ -38,6 +38,31 @@
   :type 'string
   :group 'wrangel)
 
+;; Helper functions for common operations
+
+(defun wrangel--ensure-directory-exists (directory)
+  "Ensure DIRECTORY exists, creating it if necessary."
+  (unless (file-directory-p directory)
+    (make-directory directory t)))
+
+(defun wrangel--validate-text-content (text)
+  "Return non-nil if TEXT is not empty after trimming whitespace."
+  (not (string-empty-p (string-trim text))))
+
+(defun wrangel--org-todo-formatter (text)
+  "Format TEXT as an org-mode TODO item."
+  (format "* %s\n" text))
+
+(defun wrangel--handle-response-failure (info error-context)
+  "Handle failed response with INFO context and ERROR-CONTEXT string."
+  (message "%s failed: %s" error-context (plist-get info :status)))
+
+(defun wrangel--truncate-message (text max-length)
+  "Truncate TEXT to MAX-LENGTH characters, adding ellipsis if needed."
+  (if (> (length text) max-length)
+      (concat (substring text 0 max-length) "...")
+    text))
+
 (defun wrangel--parse-json-response-generic (response key error-type)
   "Parse JSON RESPONSE and return list of items using KEY.
 ERROR-TYPE is used in error messages for context."
@@ -67,8 +92,7 @@ Returns the filename."
   (let* ((base-dir (or directory wrangel-todo-directory))
          (file-path (expand-file-name filename base-dir)))
     ;; Ensure the directory exists
-    (unless (file-directory-p base-dir)
-      (make-directory base-dir t))
+    (wrangel--ensure-directory-exists base-dir)
     (with-temp-buffer
       (when (file-exists-p file-path)
         (insert-file-contents file-path))
@@ -82,14 +106,14 @@ Returns the filename."
 (defun wrangel--append-to-org-file (filename todo-text)
   "Append TODO-TEXT to FILENAME with proper org formatting."
   (wrangel--append-to-org-file-generic filename
-                                               (lambda (text) (format "* %s\n" text))
+                                               #'wrangel--org-todo-formatter
                                                todo-text))
 
 (defun wrangel--append-idea-to-file (category idea-text)
   "Append IDEA-TEXT to a file based on CATEGORY."
   (let ((filename (format "ideas-%s.org" category)))
     (wrangel--append-to-org-file-generic filename
-                                                 (lambda (text) (format "* %s\n" text))
+                                                 #'wrangel--org-todo-formatter
                                                  idea-text)))
 
 
@@ -120,8 +144,7 @@ Returns the filename."
          (file-path (expand-file-name filename wrangel-org-nodes-directory)))
     
     ;; Ensure the org-nodes directory exists
-    (unless (file-directory-p wrangel-org-nodes-directory)
-      (make-directory wrangel-org-nodes-directory t))
+    (wrangel--ensure-directory-exists wrangel-org-nodes-directory)
     
     ;; Create the atomic note file (each idea gets its own file)
     (with-temp-buffer
@@ -163,7 +186,7 @@ Returns the filename."
   "Generic callback function to process LLM RESPONSE with INFO context.
 PARSER-FN parses the response, PROCESSOR-FN processes the results."
   (if (not response)
-      (message "Extraction failed: %s" (plist-get info :status))
+      (wrangel--handle-response-failure info "Extraction")
     (let ((items (funcall parser-fn response)))
       (if items
           (progn
@@ -194,13 +217,11 @@ INFO context. Creates atomic notes and returns node IDs for linking."
 (defun wrangel--tldr-callback (response info)
   "Callback function to process LLM RESPONSE for TLDR extraction with INFO context."
   (if (not response)
-      (message "TLDR extraction failed: %s" (plist-get info :status))
+      (wrangel--handle-response-failure info "TLDR extraction")
     (let ((tldr-text (string-trim response)))
-      (if (not (string-empty-p tldr-text))
+      (if (wrangel--validate-text-content tldr-text)
           (message "TLDR generated: %s" 
-                   (if (> (length tldr-text) 60) 
-                       (concat (substring tldr-text 0 60) "...")
-                     tldr-text))
+                   (wrangel--truncate-message tldr-text 60))
         (message "No TLDR content generated")))))
 
 (defun wrangel--extract-from-buffer-generic (system-prompt callback-fn &optional buffer)
@@ -208,7 +229,7 @@ INFO context. Creates atomic notes and returns node IDs for linking."
   (let* ((source-buffer (or buffer (current-buffer)))
          (text-content (with-current-buffer source-buffer
                          (buffer-substring-no-properties (point-min) (point-max)))))
-    (if (string-empty-p (string-trim text-content))
+    (if (not (wrangel--validate-text-content text-content))
         (message "Buffer is empty, nothing to extract")
       (gptel-request text-content
         :system system-prompt
@@ -219,7 +240,7 @@ INFO context. Creates atomic notes and returns node IDs for linking."
   (if (not (use-region-p))
       (message "No region selected")
     (let ((text-content (buffer-substring-no-properties start end)))
-      (if (string-empty-p (string-trim text-content))
+      (if (not (wrangel--validate-text-content text-content))
           (message "Selected region is empty")
         (gptel-request text-content
           :system system-prompt
@@ -227,7 +248,7 @@ INFO context. Creates atomic notes and returns node IDs for linking."
 
 (defun wrangel--extract-from-text-generic (system-prompt callback-fn text)
   "Generic function to extract from TEXT using SYSTEM-PROMPT and CALLBACK-FN."
-  (if (string-empty-p (string-trim text))
+  (if (not (wrangel--validate-text-content text))
       (message "No text provided")
     (gptel-request text
       :system system-prompt
@@ -357,8 +378,7 @@ then appends it to tldr.org file."
     
     ;; Ensure the digest directory exists
     (let ((digest-dir (file-name-directory digest-file)))
-      (unless (file-directory-p digest-dir)
-        (make-directory digest-dir t)))
+      (wrangel--ensure-directory-exists digest-dir))
     
     (with-temp-buffer
       (when (file-exists-p digest-file)
@@ -409,7 +429,7 @@ todo extraction.
 The results are combined into a single org entry in wrangel-digest.org
 with links to generated files."
   (interactive "sText to create digest from: ")
-  (if (string-empty-p (string-trim text))
+  (if (not (wrangel--validate-text-content text))
       (message "No text provided for digest")
     (progn
       ;; Store original text for the digest entry
