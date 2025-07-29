@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t; -*-
 (define-package "wrangel" "1.0.0"
   "Extract and categorize org todos using gptel.el"
   '((emacs "27.1")

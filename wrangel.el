@@ -13,6 +13,7 @@
 
 (require 'gptel)
 (require 'wrangel-prompts)
+(require 'cl-lib)
 
 (defcustom wrangel-files
   '(("inbox" . "inbox.org")
@@ -102,27 +103,28 @@ Returns the filename."
            (filename (wrangel--append-idea-to-file category text)))
       (message "Added idea to %s: %s" filename text))))
 
-(defun wrangel--generic-callback (response info type-name parser-fn processor-fn)
+(defun wrangel--generic-callback (response info parser-fn processor-fn)
   "Generic callback function to process LLM RESPONSE with INFO context.
-TYPE-NAME is used in messages, PARSER-FN parses the response, PROCESSOR-FN processes the results."
+PARSER-FN parses the response, PROCESSOR-FN processes the results."
   (if (not response)
-      (message "%s extraction failed: %s" (capitalize type-name) (plist-get info :status))
+      (message "Extraction failed: %s" (plist-get info :status))
     (let ((items (funcall parser-fn response)))
       (if items
           (progn
             (funcall processor-fn items)
-            (message "Successfully extracted and categorized %d %s" (length items) type-name))
-        (message "No %s found or failed to parse response" type-name)))))
+            (message "Successfully extracted and processed %d items" (length items)))
+        (message "No items found or failed to parse response")))))
 
 (defun wrangel--callback (response info)
   "Callback function to process LLM RESPONSE with INFO context."
-  (wrangel--generic-callback response info "todos" 
+  (wrangel--generic-callback response info
                                      #'wrangel--parse-json-response
                                      #'wrangel--process-todos))
 
 (defun wrangel--ideas-callback (response info)
-  "Callback function to process LLM RESPONSE for ideas extraction with INFO context."
-  (wrangel--generic-callback response info "ideas"
+  "Callback function to process LLM RESPONSE for ideas extraction with
+INFO context."
+  (wrangel--generic-callback response info
                                      #'wrangel--parse-ideas-json-response
                                      #'wrangel--process-ideas))
 
@@ -140,19 +142,19 @@ TYPE-NAME is used in messages, PARSER-FN parses the response, PROCESSOR-FN proce
                          tldr-text))))
         (message "No TLDR content generated")))))
 
-(defun wrangel--extract-from-buffer-generic (type-name system-prompt callback-fn &optional buffer)
-  "Generic function to extract TYPE-NAME from BUFFER using SYSTEM-PROMPT and CALLBACK-FN."
+(defun wrangel--extract-from-buffer-generic (system-prompt callback-fn &optional buffer)
+  "Generic function to extract from BUFFER using SYSTEM-PROMPT and CALLBACK-FN."
   (let* ((source-buffer (or buffer (current-buffer)))
          (text-content (with-current-buffer source-buffer
                          (buffer-substring-no-properties (point-min) (point-max)))))
     (if (string-empty-p (string-trim text-content))
-        (message "Buffer is empty, nothing to %s" type-name)
+        (message "Buffer is empty, nothing to extract")
       (gptel-request text-content
         :system system-prompt
         :callback callback-fn))))
 
-(defun wrangel--extract-from-region-generic (type-name system-prompt callback-fn start end)
-  "Generic function to extract TYPE-NAME from region using SYSTEM-PROMPT and CALLBACK-FN."
+(defun wrangel--extract-from-region-generic (system-prompt callback-fn start end)
+  "Generic function to extract from region using SYSTEM-PROMPT and CALLBACK-FN."
   (if (not (use-region-p))
       (message "No region selected")
     (let ((text-content (buffer-substring-no-properties start end)))
@@ -162,8 +164,8 @@ TYPE-NAME is used in messages, PARSER-FN parses the response, PROCESSOR-FN proce
           :system system-prompt
           :callback callback-fn)))))
 
-(defun wrangel--extract-from-text-generic (type-name system-prompt callback-fn text)
-  "Generic function to extract TYPE-NAME from TEXT using SYSTEM-PROMPT and CALLBACK-FN."
+(defun wrangel--extract-from-text-generic (system-prompt callback-fn text)
+  "Generic function to extract from TEXT using SYSTEM-PROMPT and CALLBACK-FN."
   (if (string-empty-p (string-trim text))
       (message "No text provided")
     (gptel-request text
@@ -176,21 +178,21 @@ TYPE-NAME is used in messages, PARSER-FN parses the response, PROCESSOR-FN proce
 Sends the buffer content to an LLM to extract and categorize org todos,
 then appends them to appropriate org files."
   (interactive)
-  (wrangel--extract-from-buffer-generic "extract" wrangel-system-prompt 
+  (wrangel--extract-from-buffer-generic wrangel-system-prompt 
                                                 #'wrangel--callback buffer))
 
 ;;;###autoload
 (defun wrangel-todo-from-region (start end)
   "Extract todos from region between START and END using gptel.el."
   (interactive "r")
-  (wrangel--extract-from-region-generic "extract" wrangel-system-prompt 
+  (wrangel--extract-from-region-generic wrangel-system-prompt 
                                                 #'wrangel--callback start end))
 
 ;;;###autoload
 (defun wrangel-todo-from-text (text)
   "Extract todos from TEXT string using gptel.el."
   (interactive "sText to extract todos from: ")
-  (wrangel--extract-from-text-generic "extract" wrangel-system-prompt 
+  (wrangel--extract-from-text-generic wrangel-system-prompt 
                                               #'wrangel--callback text))
 
 ;;;###autoload
@@ -199,21 +201,21 @@ then appends them to appropriate org files."
 Sends the buffer content to an LLM to extract discrete ideas,
 then appends them to category-specific org files."
   (interactive)
-  (wrangel--extract-from-buffer-generic "extract" wrangel-ideas-system-prompt 
+  (wrangel--extract-from-buffer-generic wrangel-ideas-system-prompt 
                                                 #'wrangel--ideas-callback buffer))
 
 ;;;###autoload
 (defun wrangel-ideas-from-region (start end)
   "Extract atomic ideas from region between START and END using gptel.el."
   (interactive "r")
-  (wrangel--extract-from-region-generic "extract" wrangel-ideas-system-prompt 
+  (wrangel--extract-from-region-generic wrangel-ideas-system-prompt 
                                                 #'wrangel--ideas-callback start end))
 
 ;;;###autoload
 (defun wrangel-ideas-from-text (text)
   "Extract atomic ideas from TEXT string using gptel.el."
   (interactive "sText to extract ideas from: ")
-  (wrangel--extract-from-text-generic "extract" wrangel-ideas-system-prompt 
+  (wrangel--extract-from-text-generic wrangel-ideas-system-prompt 
                                               #'wrangel--ideas-callback text))
 
 ;;;###autoload
@@ -222,21 +224,21 @@ then appends them to category-specific org files."
 Sends the buffer content to an LLM to create a concise summary,
 then appends it to tldr.org file."
   (interactive)
-  (wrangel--extract-from-buffer-generic "summarize" wrangel-tldr-system-prompt 
+  (wrangel--extract-from-buffer-generic wrangel-tldr-system-prompt 
                                                 #'wrangel--tldr-callback buffer))
 
 ;;;###autoload
 (defun wrangel-tldr-from-region (start end)
   "Create TLDR summary from region between START and END using gptel.el."
   (interactive "r")
-  (wrangel--extract-from-region-generic "summarize" wrangel-tldr-system-prompt 
+  (wrangel--extract-from-region-generic wrangel-tldr-system-prompt 
                                                 #'wrangel--tldr-callback start end))
 
 ;;;###autoload
 (defun wrangel-tldr-from-text (text)
   "Create TLDR summary from TEXT string using gptel.el."
   (interactive "sText to create TLDR from: ")
-  (wrangel--extract-from-text-generic "summarize" wrangel-tldr-system-prompt 
+  (wrangel--extract-from-text-generic wrangel-tldr-system-prompt 
                                               #'wrangel--tldr-callback text))
 
 (defvar wrangel--digest-results nil
@@ -249,12 +251,12 @@ then appends it to tldr.org file."
       (let* ((category (plist-get todo :category))
              (filename (cdr (assoc category wrangel-files))))
         (when filename
-          (add-to-list 'files filename))
+          (cl-pushnew filename files :test #'string=))
         (unless filename
-          (add-to-list 'files "inbox.org"))))
+          (cl-pushnew "inbox.org" files :test #'string=))))
     (reverse files)))
 
-(defun wrangel--digest-callback (response info step)
+(defun wrangel--digest-callback (response _info step)
   "Callback for digest processing. STEP indicates which command completed."
   (let ((results (or wrangel--digest-results (make-hash-table :test 'equal))))
     (cond
@@ -331,8 +333,10 @@ then appends it to tldr.org file."
 
 ;;;###autoload
 (defun wrangel-digest-from-text (text)
-  "Create a complete digest entry from TEXT by running tldr, ideas, and todo extraction.
-The results are combined into a single org entry in wrangel-digest.org with links to generated files."
+  "Create a complete digest entry from TEXT by running tldr, ideas, and
+todo extraction.
+The results are combined into a single org entry in wrangel-digest.org
+with links to generated files."
   (interactive "sText to create digest from: ")
   (if (string-empty-p (string-trim text))
       (message "No text provided for digest")
