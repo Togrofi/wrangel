@@ -33,6 +33,11 @@
   :type 'string
   :group 'wrangel)
 
+(defcustom wrangel-digest-file "~/org/wrangel-digest.org"
+  "File path where digest entries should be stored."
+  :type 'string
+  :group 'wrangel)
+
 (defun wrangel--parse-json-response-generic (response key error-type)
   "Parse JSON RESPONSE and return list of items using KEY.
 ERROR-TYPE is used in error messages for context."
@@ -87,14 +92,6 @@ Returns the filename."
                                                  (lambda (text) (format "* %s\n" text))
                                                  idea-text)))
 
-(defun wrangel--append-tldr-to-file (tldr-text)
-  "Append TLDR-TEXT to tldr.org file."
-  (wrangel--append-to-org-file-generic "tldr.org"
-                                               (lambda (text) 
-                                                 (format "* TLDR - %s\n%s\n\n" 
-                                                         (format-time-string "%Y-%m-%d %H:%M")
-                                                         text))
-                                               tldr-text))
 
 (defun wrangel--process-todos (todos)
   "Process TODOS list and append to appropriate org files."
@@ -200,12 +197,10 @@ INFO context. Creates atomic notes and returns node IDs for linking."
       (message "TLDR extraction failed: %s" (plist-get info :status))
     (let ((tldr-text (string-trim response)))
       (if (not (string-empty-p tldr-text))
-          (progn
-            (let ((filename (wrangel--append-tldr-to-file tldr-text)))
-              (message "TLDR saved to %s: %s" filename 
-                       (if (> (length tldr-text) 60) 
-                           (concat (substring tldr-text 0 60) "...")
-                         tldr-text))))
+          (message "TLDR generated: %s" 
+                   (if (> (length tldr-text) 60) 
+                       (concat (substring tldr-text 0 60) "...")
+                     tldr-text))
         (message "No TLDR content generated")))))
 
 (defun wrangel--extract-from-buffer-generic (system-prompt callback-fn &optional buffer)
@@ -358,11 +353,12 @@ then appends it to tldr.org file."
          (todos (gethash 'todos results))
          (todo-files (gethash 'todo-files results))
          (original-text (gethash 'original-text results))
-         (digest-file (expand-file-name "wrangel-digest.org" wrangel-todo-directory)))
+         (digest-file (expand-file-name wrangel-digest-file)))
     
-    ;; Ensure the todo directory exists
-    (unless (file-directory-p wrangel-todo-directory)
-      (make-directory wrangel-todo-directory t))
+    ;; Ensure the digest directory exists
+    (let ((digest-dir (file-name-directory digest-file)))
+      (unless (file-directory-p digest-dir)
+        (make-directory digest-dir t)))
     
     (with-temp-buffer
       (when (file-exists-p digest-file)
