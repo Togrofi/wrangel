@@ -25,7 +25,22 @@ Extract todos from region between START and END using gptel.el.
 Extract todos from TEXT string using gptel.el.
 
 (fn TEXT)" t)
+(autoload 'org-todo-extractor-ideas-from-buffer "org-todo-extractor" "\
+Extract atomic ideas from BUFFER (or current buffer) using gptel.el.
+Sends the buffer content to an LLM to extract discrete ideas,
+then appends them to category-specific org files.
+
+(fn &optional BUFFER)" t)
+(autoload 'org-todo-extractor-ideas-from-region "org-todo-extractor" "\
+Extract atomic ideas from region between START and END using gptel.el.
+
+(fn START END)" t)
+(autoload 'org-todo-extractor-ideas-from-text "org-todo-extractor" "\
+Extract atomic ideas from TEXT string using gptel.el.
+
+(fn TEXT)" t)
 (register-definition-prefixes "org-todo-extractor" '("org-todo-extractor-"))
+
 
 ;;; End of scraped data
 

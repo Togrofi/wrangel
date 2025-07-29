@@ -58,6 +58,41 @@ Rules:
   :type 'string
   :group 'org-todo-extractor)
 
+(defcustom org-todo-extractor-ideas-system-prompt
+  "You are an expert at extracting atomic ideas from text and organizing them clearly.
+
+Extract all discrete, atomic ideas from the provided text. Each idea should be:
+- Self-contained and understandable on its own
+- Focused on a single concept or insight
+- Clear and concise
+- Valuable for knowledge management
+
+Format your response as JSON with this structure:
+{
+  \"ideas\": [
+    {
+      \"text\": \"Functional programming emphasizes immutability to reduce bugs\",
+      \"category\": \"programming\"
+    },
+    {
+      \"text\": \"Regular exercise improves cognitive function and memory\",
+      \"category\": \"health\"
+    }
+  ]
+}
+
+Categories should be simple, lowercase terms like: programming, health, productivity, philosophy, business, etc.
+
+Rules:
+- Extract only genuine insights or concepts
+- Make each idea atomic (one concept per idea)
+- Use clear, standalone sentences
+- Categorize broadly but meaningfully
+- If unsure about category, use 'general'"
+  "System prompt for the LLM to extract atomic ideas."
+  :type 'string
+  :group 'org-todo-extractor)
+
 (defun org-todo-extractor--parse-json-response (response)
   "Parse JSON RESPONSE and return list of todos."
   (condition-case err
@@ -71,6 +106,19 @@ Rules:
      (message "Error parsing JSON response: %s" err)
      nil)))
 
+(defun org-todo-extractor--parse-ideas-json-response (response)
+  "Parse JSON RESPONSE and return list of ideas."
+  (condition-case err
+      (let* ((json-data (json-parse-string response :object-type 'plist))
+             (ideas (plist-get json-data :ideas)))
+        (mapcar (lambda (idea)
+                  (list :text (plist-get idea :text)
+                        :category (plist-get idea :category)))
+                ideas))
+    (error
+     (message "Error parsing ideas JSON response: %s" err)
+     nil)))
+
 (defun org-todo-extractor--append-to-org-file (filename todo-text)
   "Append TODO-TEXT to FILENAME with proper org formatting."
   (let ((file-path (expand-file-name filename)))
@@ -82,6 +130,20 @@ Rules:
         (insert "\n"))
       (insert (format "* %s\n" todo-text))
       (write-region (point-min) (point-max) file-path))))
+
+(defun org-todo-extractor--append-idea-to-file (category idea-text)
+  "Append IDEA-TEXT to a file based on CATEGORY."
+  (let ((filename (format "ideas-%s.org" category))
+        (file-path (expand-file-name (format "ideas-%s.org" category))))
+    (with-temp-buffer
+      (when (file-exists-p file-path)
+        (insert-file-contents file-path))
+      (goto-char (point-max))
+      (unless (bolp)
+        (insert "\n"))
+      (insert (format "* %s\n" idea-text))
+      (write-region (point-min) (point-max) file-path))
+    filename))
 
 (defun org-todo-extractor--process-todos (todos)
   "Process TODOS list and append to appropriate org files."
@@ -97,6 +159,14 @@ Rules:
           (org-todo-extractor--append-to-org-file "inbox.org" text)
           (message "Added todo to inbox.org (unknown category '%s'): %s" category text))))))
 
+(defun org-todo-extractor--process-ideas (ideas)
+  "Process IDEAS list and append to category-specific org files."
+  (dolist (idea ideas)
+    (let* ((text (plist-get idea :text))
+           (category (or (plist-get idea :category) "general"))
+           (filename (org-todo-extractor--append-idea-to-file category text)))
+      (message "Added idea to %s: %s" filename text))))
+
 (defun org-todo-extractor--callback (response info)
   "Callback function to process LLM RESPONSE with INFO context."
   (if (not response)
@@ -107,6 +177,17 @@ Rules:
             (org-todo-extractor--process-todos todos)
             (message "Successfully extracted and categorized %d todos" (length todos)))
         (message "No todos found or failed to parse response")))))
+
+(defun org-todo-extractor--ideas-callback (response info)
+  "Callback function to process LLM RESPONSE for ideas extraction with INFO context."
+  (if (not response)
+      (message "Ideas extraction failed: %s" (plist-get info :status))
+    (let ((ideas (org-todo-extractor--parse-ideas-json-response response)))
+      (if ideas
+          (progn
+            (org-todo-extractor--process-ideas ideas)
+            (message "Successfully extracted and categorized %d ideas" (length ideas)))
+        (message "No ideas found or failed to parse response")))))
 
 ;;;###autoload
 (defun org-todo-extractor-from-buffer (&optional buffer)
@@ -145,6 +226,44 @@ then appends them to appropriate org files."
     (gptel-request text
       :system org-todo-extractor-system-prompt
       :callback #'org-todo-extractor--callback)))
+
+;;;###autoload
+(defun org-todo-extractor-ideas-from-buffer (&optional buffer)
+  "Extract atomic ideas from BUFFER (or current buffer) using gptel.el.
+Sends the buffer content to an LLM to extract discrete ideas,
+then appends them to category-specific org files."
+  (interactive)
+  (let* ((source-buffer (or buffer (current-buffer)))
+         (text-content (with-current-buffer source-buffer
+                         (buffer-substring-no-properties (point-min) (point-max)))))
+    (if (string-empty-p (string-trim text-content))
+        (message "Buffer is empty, nothing to extract")
+      (gptel-request text-content
+        :system org-todo-extractor-ideas-system-prompt
+        :callback #'org-todo-extractor--ideas-callback))))
+
+;;;###autoload
+(defun org-todo-extractor-ideas-from-region (start end)
+  "Extract atomic ideas from region between START and END using gptel.el."
+  (interactive "r")
+  (if (not (use-region-p))
+      (message "No region selected")
+    (let ((text-content (buffer-substring-no-properties start end)))
+      (if (string-empty-p (string-trim text-content))
+          (message "Selected region is empty")
+        (gptel-request text-content
+          :system org-todo-extractor-ideas-system-prompt
+          :callback #'org-todo-extractor--ideas-callback)))))
+
+;;;###autoload
+(defun org-todo-extractor-ideas-from-text (text)
+  "Extract atomic ideas from TEXT string using gptel.el."
+  (interactive "sText to extract ideas from: ")
+  (if (string-empty-p (string-trim text))
+      (message "No text provided")
+    (gptel-request text
+      :system org-todo-extractor-ideas-system-prompt
+      :callback #'org-todo-extractor--ideas-callback)))
 
 (provide 'org-todo-extractor)
 
