@@ -1,0 +1,18 @@
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Org files (user-generated)
+inbox.org
+journal.org
+goals.org
+
+# Test files
+*-test.el
+test-*.txt
