@@ -288,7 +288,7 @@ then appends it to tldr.org file."
          (todos (gethash 'todos results))
          (todo-files (gethash 'todo-files results))
          (original-text (gethash 'original-text results))
-         (digest-file "ramble-digest.org"))
+         (digest-file "wrangel-digest.org"))
     
     (with-temp-buffer
       (when (file-exists-p digest-file)
@@ -332,7 +332,7 @@ then appends it to tldr.org file."
 ;;;###autoload
 (defun wrangel-digest-from-text (text)
   "Create a complete digest entry from TEXT by running tldr, ideas, and todo extraction.
-The results are combined into a single org entry in ramble-digest.org with links to generated files."
+The results are combined into a single org entry in wrangel-digest.org with links to generated files."
   (interactive "sText to create digest from: ")
   (if (string-empty-p (string-trim text))
       (message "No text provided for digest")

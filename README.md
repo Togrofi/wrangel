@@ -1,4 +1,4 @@
-# org-todo-extractor.el
+# wrangel.el
 
 Extract and categorize org-mode todos from text using LLMs via gptel.el.
 
@@ -27,8 +27,8 @@ This package provides functionality to extract actionable todos from any text an
 2. Add to your Emacs configuration:
 
 ```elisp
-(add-to-list 'load-path "/path/to/org-todo-extractor")
-(require 'org-todo-extractor)
+(add-to-list 'load-path "/path/to/wrangel")
+(require 'wrangel)
 ```
 
 ### Package Manager Installation
@@ -36,11 +36,11 @@ This package provides functionality to extract actionable todos from any text an
 If using `use-package` with a local path:
 
 ```elisp
-(use-package org-todo-extractor
-  :load-path "/path/to/org-todo-extractor"
-  :commands (org-todo-extractor-from-buffer
-             org-todo-extractor-from-region
-             org-todo-extractor-from-text))
+(use-package wrangel
+  :load-path "/path/to/wrangel"
+  :commands (wrangel-todo-from-buffer
+             wrangel-todo-from-region
+             wrangel-todo-from-text))
 ```
 
 ## Setup
@@ -53,14 +53,14 @@ If using `use-package` with a local path:
 
 ### Commands
 
-- `M-x org-todo-extractor-from-buffer` - Extract todos from entire buffer
-- `M-x org-todo-extractor-from-region` - Extract todos from selected region
-- `M-x org-todo-extractor-from-text` - Extract todos from input text
+- `M-x wrangel-todo-from-buffer` - Extract todos from entire buffer
+- `M-x wrangel-todo-from-region` - Extract todos from selected region
+- `M-x wrangel-todo-from-text` - Extract todos from input text
 
 ### Example Workflow
 
 1. Open a file with notes, meeting minutes, or brainstorming text
-2. Run `M-x org-todo-extractor-from-buffer`
+2. Run `M-x wrangel-todo-from-buffer`
 3. Watch as actionable todos are automatically extracted and filed
 
 ## Customization
@@ -68,7 +68,7 @@ If using `use-package` with a local path:
 ### File Mappings
 
 ```elisp
-(setq org-todo-extractor-files
+(setq wrangel-files
       '(("inbox" . "inbox.org")
         ("journal" . "journal.org") 
         ("goals" . "goals.org")
@@ -77,7 +77,7 @@ If using `use-package` with a local path:
 
 ### System Prompt
 
-Customize the LLM instructions by modifying `org-todo-extractor-system-prompt`.
+Customize the LLM instructions by modifying `wrangel-system-prompt`.
 
 ## Example
 
