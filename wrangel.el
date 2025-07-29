@@ -389,11 +389,9 @@ then appends it to tldr.org file."
       ;; Write the digest entry
       (insert (format "* %s\n" timestamp))
       (insert "** TLDR\n")
-      (insert (format "%s\n\n" tldr-text))
-      
+      (insert (format "%s\n" tldr-text))
       (insert "** Content\n")
-      (insert (format "%s\n\n" (or original-text "Original text not captured")))
-      
+      (insert (format "%s\n" (or original-text "Original text not captured")))
       (insert "** Atomic Notes\n")
       (let ((idea-nodes (gethash 'idea-nodes results)))
         (if idea-nodes
@@ -404,8 +402,6 @@ then appends it to tldr.org file."
                       (title (plist-get node :title)))
                   (insert (format "- [[id:%s][%s]]\n" node-id title)))))
           (insert "No atomic notes created\n")))
-      (insert "\n")
-      
       (insert "** TODOs\n")
       (if todos
           (progn
@@ -413,7 +409,6 @@ then appends it to tldr.org file."
             (dolist (file (delete-dups todo-files))
               (insert (format "- [[file:%s][%s]]\n" file file))))
         (insert "No todos extracted\n"))
-      (insert "\n")
       
       (write-region (point-min) (point-max) digest-file))
     
