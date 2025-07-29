@@ -5,9 +5,10 @@
 
 ;;; Code:
 
+(add-to-list 'load-path (or (and load-file-name (directory-file-name (file-name-directory load-file-name))) (car load-path)))
+
+
 
-;;;### (autoloads nil "org-todo-extractor" "org-todo-extractor.el"
-;;;;;;  (0 0 0 0))
 ;;; Generated autoloads from org-todo-extractor.el
 
 (autoload 'org-todo-extractor-from-buffer "org-todo-extractor" "\
@@ -15,21 +16,16 @@ Extract todos from BUFFER (or current buffer) using gptel.el.
 Sends the buffer content to an LLM to extract and categorize org todos,
 then appends them to appropriate org files.
 
-\(fn &optional BUFFER)" t)
-
+(fn &optional BUFFER)" t)
 (autoload 'org-todo-extractor-from-region "org-todo-extractor" "\
 Extract todos from region between START and END using gptel.el.
 
-\(fn START END)" t)
-
+(fn START END)" t)
 (autoload 'org-todo-extractor-from-text "org-todo-extractor" "\
 Extract todos from TEXT string using gptel.el.
 
-\(fn TEXT)" t)
-
+(fn TEXT)" t)
 (register-definition-prefixes "org-todo-extractor" '("org-todo-extractor-"))
-
-;;;***
 
 ;;; End of scraped data
 
