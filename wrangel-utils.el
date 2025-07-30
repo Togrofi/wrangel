@@ -13,6 +13,7 @@
 
 (require 'json)
 (require 'cl-lib)
+(require 'gptel)
 
 ;; Declare variables that are defined in main wrangel file
 (defvar wrangel-todo-directory)
