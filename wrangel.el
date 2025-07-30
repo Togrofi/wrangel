@@ -13,7 +13,9 @@
 
 (require 'gptel)
 (require 'wrangel-prompts)
+(require 'wrangel-utils)
 (require 'cl-lib)
+(require 'org-id)
 
 (defcustom wrangel-todo-directory "~/org/"
   "Directory path where todo org files should be stored."
@@ -38,85 +40,6 @@
   :type 'string
   :group 'wrangel)
 
-;; Helper functions for common operations
-
-(defun wrangel--ensure-directory-exists (directory)
-  "Ensure DIRECTORY exists, creating it if necessary."
-  (unless (file-directory-p directory)
-    (make-directory directory t)))
-
-(defun wrangel--validate-text-content (text)
-  "Return non-nil if TEXT is not empty after trimming whitespace."
-  (not (string-empty-p (string-trim text))))
-
-(defun wrangel--org-todo-formatter (text)
-  "Format TEXT as an org-mode TODO item."
-  (format "* %s\n" text))
-
-(defun wrangel--handle-response-failure (info error-context)
-  "Handle failed response with INFO context and ERROR-CONTEXT string."
-  (message "%s failed: %s" error-context (plist-get info :status)))
-
-(defun wrangel--truncate-message (text max-length)
-  "Truncate TEXT to MAX-LENGTH characters, adding ellipsis if needed."
-  (if (> (length text) max-length)
-      (concat (substring text 0 max-length) "...")
-    text))
-
-(defun wrangel--parse-json-response-generic (response key error-type)
-  "Parse JSON RESPONSE and return list of items using KEY.
-ERROR-TYPE is used in error messages for context."
-  (condition-case err
-      (let* ((json-data (json-parse-string response :object-type 'plist))
-             (items (plist-get json-data key)))
-        (mapcar (lambda (item)
-                  (list :text (plist-get item :text)
-                        :category (plist-get item :category)))
-                items))
-    (error
-     (message "Error parsing %s JSON response: %s" error-type err)
-     nil)))
-
-(defun wrangel--parse-json-response (response)
-  "Parse JSON RESPONSE and return list of todos."
-  (wrangel--parse-json-response-generic response :todos "todo"))
-
-(defun wrangel--parse-ideas-json-response (response)
-  "Parse JSON RESPONSE and return list of ideas."
-  (wrangel--parse-json-response-generic response :ideas "ideas"))
-
-(defun wrangel--append-to-org-file-generic (filename content-formatter text &optional directory)
-  "Append TEXT to FILENAME using CONTENT-FORMATTER function for org formatting.
-Uses DIRECTORY if provided, otherwise uses wrangel-todo-directory.
-Returns the filename."
-  (let* ((base-dir (or directory wrangel-todo-directory))
-         (file-path (expand-file-name filename base-dir)))
-    ;; Ensure the directory exists
-    (wrangel--ensure-directory-exists base-dir)
-    (with-temp-buffer
-      (when (file-exists-p file-path)
-        (insert-file-contents file-path))
-      (goto-char (point-max))
-      (unless (bolp)
-        (insert "\n"))
-      (insert (funcall content-formatter text))
-      (write-region (point-min) (point-max) file-path))
-    filename))
-
-(defun wrangel--append-to-org-file (filename todo-text)
-  "Append TODO-TEXT to FILENAME with proper org formatting."
-  (wrangel--append-to-org-file-generic filename
-                                               #'wrangel--org-todo-formatter
-                                               todo-text))
-
-(defun wrangel--append-idea-to-file (category idea-text)
-  "Append IDEA-TEXT to a file based on CATEGORY."
-  (let ((filename (format "ideas-%s.org" category)))
-    (wrangel--append-to-org-file-generic filename
-                                                 #'wrangel--org-todo-formatter
-                                                 idea-text)))
-
-
 (defun wrangel--process-todos (todos)
   "Process TODOS list and append to appropriate org files."
   (dolist (todo todos)
@@ -125,10 +48,10 @@ Returns the filename."
            (filename (cdr (assoc category wrangel-files))))
       (if filename
           (progn
-            (wrangel--append-to-org-file filename text)
+            (wrangel--append-to-org-file-generic filename #'wrangel--org-todo-formatter text)
             (message "Added todo to %s: %s" filename text))
         (progn
-          (wrangel--append-to-org-file "inbox.org" text)
+          (wrangel--append-to-org-file-generic "inbox.org" #'wrangel--org-todo-formatter text)
           (message "Added todo to inbox.org (unknown category '%s'): %s" category text))))))
 
 (defun wrangel--create-org-node-for-idea (idea)
@@ -174,169 +97,27 @@ Returns the filename."
         (message "Created atomic note: %s" title)))
     (reverse node-ids)))
 
-(defun wrangel--process-ideas (ideas)
-  "Process IDEAS list and append to category-specific org files."
-  (dolist (idea ideas)
-    (let* ((text (plist-get idea :text))
-           (category (or (plist-get idea :category) "general"))
-           (filename (wrangel--append-idea-to-file category text)))
-      (message "Added idea to %s: %s" filename text))))
-
-(defun wrangel--generic-callback (response info parser-fn processor-fn)
-  "Generic callback function to process LLM RESPONSE with INFO context.
-PARSER-FN parses the response, PROCESSOR-FN processes the results."
-  (if (not response)
-      (wrangel--handle-response-failure info "Extraction")
-    (let ((items (funcall parser-fn response)))
-      (if items
-          (progn
-            (funcall processor-fn items)
-            (message "Successfully extracted and processed %d items" (length items)))
-        (message "No items found or failed to parse response")))))
-
-(defun wrangel--callback (response info)
-  "Callback function to process LLM RESPONSE with INFO context."
-  (wrangel--generic-callback response info
-                                     #'wrangel--parse-json-response
-                                     #'wrangel--process-todos))
-
-(defun wrangel--ideas-callback (response info)
-  "Callback function to process LLM RESPONSE for ideas extraction with
-INFO context."
-  (wrangel--generic-callback response info
-                                     #'wrangel--parse-ideas-json-response
-                                     #'wrangel--process-ideas))
-
-(defun wrangel--ideas-org-node-callback (response info)
-  "Callback function to process LLM RESPONSE for ideas extraction as org-nodes.
-INFO context. Creates atomic notes and returns node IDs for linking."
-  (wrangel--generic-callback response info
-                                     #'wrangel--parse-ideas-json-response
-                                     #'wrangel--process-ideas-as-org-nodes))
-
-(defun wrangel--tldr-callback (response info)
-  "Callback function to process LLM RESPONSE for TLDR extraction with INFO context."
-  (if (not response)
-      (wrangel--handle-response-failure info "TLDR extraction")
-    (let ((tldr-text (string-trim response)))
-      (if (wrangel--validate-text-content tldr-text)
-          (message "TLDR generated: %s" 
-                   (wrangel--truncate-message tldr-text 60))
-        (message "No TLDR content generated")))))
-
-(defun wrangel--extract-from-buffer-generic (system-prompt callback-fn &optional buffer)
-  "Generic function to extract from BUFFER using SYSTEM-PROMPT and CALLBACK-FN."
-  (let* ((source-buffer (or buffer (current-buffer)))
-         (text-content (with-current-buffer source-buffer
-                         (buffer-substring-no-properties (point-min) (point-max)))))
-    (if (not (wrangel--validate-text-content text-content))
-        (message "Buffer is empty, nothing to extract")
-      (gptel-request text-content
-        :system system-prompt
-        :callback callback-fn))))
-
-(defun wrangel--extract-from-region-generic (system-prompt callback-fn start end)
-  "Generic function to extract from region using SYSTEM-PROMPT and CALLBACK-FN."
-  (if (not (use-region-p))
-      (message "No region selected")
-    (let ((text-content (buffer-substring-no-properties start end)))
-      (if (not (wrangel--validate-text-content text-content))
-          (message "Selected region is empty")
-        (gptel-request text-content
-          :system system-prompt
-          :callback callback-fn)))))
-
-(defun wrangel--extract-from-text-generic (system-prompt callback-fn text)
-  "Generic function to extract from TEXT using SYSTEM-PROMPT and CALLBACK-FN."
-  (if (not (wrangel--validate-text-content text))
-      (message "No text provided")
-    (gptel-request text
-      :system system-prompt
-      :callback callback-fn)))
-
-;;;###autoload
-(defun wrangel-todo-from-buffer (&optional buffer)
-  "Extract todos from BUFFER (or current buffer) using gptel.el.
-Sends the buffer content to an LLM to extract and categorize org todos,
-then appends them to appropriate org files."
-  (interactive)
-  (wrangel--extract-from-buffer-generic wrangel-system-prompt 
-                                                #'wrangel--callback buffer))
-
-;;;###autoload
-(defun wrangel-todo-from-region (start end)
-  "Extract todos from region between START and END using gptel.el."
-  (interactive "r")
-  (wrangel--extract-from-region-generic wrangel-system-prompt 
-                                                #'wrangel--callback start end))
-
 ;;;###autoload
 (defun wrangel-todo-from-text (text)
   "Extract todos from TEXT string using gptel.el."
-  (interactive "sText to extract todos from: ")
   (wrangel--extract-from-text-generic wrangel-system-prompt 
-                                              #'wrangel--callback text))
-
-;;;###autoload
-(defun wrangel-ideas-from-buffer (&optional buffer)
-  "Extract atomic ideas from BUFFER (or current buffer) using gptel.el.
-Sends the buffer content to an LLM to extract discrete ideas,
-then appends them to category-specific org files."
-  (interactive)
-  (wrangel--extract-from-buffer-generic wrangel-ideas-system-prompt 
-                                                #'wrangel--ideas-callback buffer))
-
-;;;###autoload
-(defun wrangel-ideas-from-region (start end)
-  "Extract atomic ideas from region between START and END using gptel.el."
-  (interactive "r")
-  (wrangel--extract-from-region-generic wrangel-ideas-system-prompt 
-                                                #'wrangel--ideas-callback start end))
-
+                                              (wrangel--create-no-save-callback 'todo #'wrangel--parse-todo-json-response) 
+                                              text))
 ;;;###autoload
 (defun wrangel-ideas-from-text (text)
   "Extract atomic ideas from TEXT string using gptel.el."
-  (interactive "sText to extract ideas from: ")
   (wrangel--extract-from-text-generic wrangel-ideas-system-prompt 
-                                              #'wrangel--ideas-callback text))
-
-;;;###autoload
-(defun wrangel-tldr-from-buffer (&optional buffer)
-  "Create TLDR summary from BUFFER (or current buffer) using gptel.el.
-Sends the buffer content to an LLM to create a concise summary,
-then appends it to tldr.org file."
-  (interactive)
-  (wrangel--extract-from-buffer-generic wrangel-tldr-system-prompt 
-                                                #'wrangel--tldr-callback buffer))
-
-;;;###autoload
-(defun wrangel-tldr-from-region (start end)
-  "Create TLDR summary from region between START and END using gptel.el."
-  (interactive "r")
-  (wrangel--extract-from-region-generic wrangel-tldr-system-prompt 
-                                                #'wrangel--tldr-callback start end))
-
+                                              (wrangel--create-no-save-callback 'idea #'wrangel--parse-ideas-json-response) 
+                                              text))
 ;;;###autoload
 (defun wrangel-tldr-from-text (text)
   "Create TLDR summary from TEXT string using gptel.el."
-  (interactive "sText to create TLDR from: ")
   (wrangel--extract-from-text-generic wrangel-tldr-system-prompt 
-                                              #'wrangel--tldr-callback text))
+                                              (wrangel--create-no-save-callback 'tldr nil) 
+                                              text))
 
 (defvar wrangel--digest-results nil
   "Internal variable to store digest processing results.")
-
-(defun wrangel--collect-todo-files (todos)
-  "Collect filenames that todos were written to and return as list."
-  (let ((files '()))
-    (dolist (todo todos)
-      (let* ((category (plist-get todo :category))
-             (filename (cdr (assoc category wrangel-files))))
-        (when filename
-          (cl-pushnew filename files :test #'string=))
-        (unless filename
-          (cl-pushnew "inbox.org" files :test #'string=))))
-    (reverse files)))
 
 (defun wrangel--digest-callback (response _info step)
   "Callback for digest processing. STEP indicates which command completed."
@@ -354,7 +135,7 @@ then appends it to tldr.org file."
         (puthash 'idea-nodes org-node-links results)))
      
      ((eq step 'todos)
-      (let ((todos (wrangel--parse-json-response (or response ""))))
+      (let ((todos (wrangel--parse-todo-json-response (or response ""))))
         (puthash 'todos todos results)
         (puthash 'todo-files (wrangel--collect-todo-files todos) results))))
     
@@ -406,7 +187,7 @@ then appends it to tldr.org file."
       (if todos
           (progn
             (insert (format "Generated %d todos in the following files:\n" (length todos)))
-            (dolist (file (delete-dups todo-files))
+            (dolist (file (delete-dups (or todo-files '())))
               (insert (format "- [[file:%s][%s]]\n" file file))))
         (insert "No todos extracted\n"))
       
@@ -415,7 +196,9 @@ then appends it to tldr.org file."
     ;; Clear results and notify user
     (setq wrangel--digest-results nil)
     (message "Digest entry written to %s with %d ideas and %d todos" 
-             digest-file (length ideas) (length todos))))
+             digest-file 
+             (length (or ideas '())) 
+             (length (or todos '())))))
 
 ;;;###autoload
 (defun wrangel-digest-from-text (text)
@@ -423,7 +206,6 @@ then appends it to tldr.org file."
 todo extraction.
 The results are combined into a single org entry in wrangel-digest.org
 with links to generated files."
-  (interactive "sText to create digest from: ")
   (if (not (wrangel--validate-text-content text))
       (message "No text provided for digest")
     (progn
@@ -446,7 +228,7 @@ with links to generated files."
         :system wrangel-system-prompt
         :callback (lambda (response info)
                     ;; Process todos first to create files
-                    (let ((todos (wrangel--parse-json-response (or response ""))))
+                    (let ((todos (wrangel--parse-todo-json-response (or response ""))))
                       (when todos
                         (wrangel--process-todos todos)))
                     ;; Then handle digest callback

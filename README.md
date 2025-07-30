@@ -42,14 +42,8 @@ If using `use-package` with a local path:
 ```elisp
 (use-package wrangel
   :load-path "/path/to/wrangel"
-  :commands (wrangel-todo-from-buffer
-             wrangel-todo-from-region
-             wrangel-todo-from-text
-             wrangel-ideas-from-buffer
-             wrangel-ideas-from-region
+  :commands (wrangel-todo-from-text
              wrangel-ideas-from-text
-             wrangel-tldr-from-buffer
-             wrangel-tldr-from-region
              wrangel-tldr-from-text
              wrangel-digest-from-buffer
              wrangel-digest-from-region
@@ -67,18 +61,12 @@ If using `use-package` with a local path:
 ### Commands
 
 #### TODO Extraction
-- `M-x wrangel-todo-from-buffer` - Extract todos from entire buffer
-- `M-x wrangel-todo-from-region` - Extract todos from selected region
 - `M-x wrangel-todo-from-text` - Extract todos from input text
 
 #### Ideas Extraction
-- `M-x wrangel-ideas-from-buffer` - Extract atomic ideas from entire buffer
-- `M-x wrangel-ideas-from-region` - Extract atomic ideas from selected region
 - `M-x wrangel-ideas-from-text` - Extract atomic ideas from input text
 
 #### TLDR Summaries
-- `M-x wrangel-tldr-from-buffer` - Create TLDR summary from entire buffer
-- `M-x wrangel-tldr-from-region` - Create TLDR summary from selected region
 - `M-x wrangel-tldr-from-text` - Create TLDR summary from input text
 
 #### Digest Mode (All-in-One)
@@ -89,8 +77,8 @@ If using `use-package` with a local path:
 ### Example Workflows
 
 #### Basic TODO Extraction
-1. Open a file with notes, meeting minutes, or brainstorming text
-2. Run `M-x wrangel-todo-from-buffer`
+1. Select text with notes, meeting minutes, or brainstorming content
+2. Run `M-x wrangel-todo-from-text` and paste or type the text
 3. Watch as actionable todos are automatically extracted and filed
 
 #### Comprehensive Digest Processing
@@ -100,7 +88,7 @@ If using `use-package` with a local path:
 
 #### Knowledge Management with Ideas
 1. Read an interesting article or paper
-2. Run `M-x wrangel-ideas-from-buffer`
+2. Run `M-x wrangel-ideas-from-text` and paste the content
 3. Individual atomic notes are created as separate org-node files in your zettelkasten directory
 
 ## Customization
